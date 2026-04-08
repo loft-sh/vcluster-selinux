@@ -74,22 +74,3 @@ Run `make build-el9` to verify the policy compiles. Push a PR to validate both d
 1. Create `policy/<distro>/` with scripts, spec, and policy files
 2. Create `Dockerfile.<distro>` with the appropriate base image
 3. `make build-<distro>` picks it up automatically via the Makefile
-
-## Releasing
-
-1. Tag: `git tag v0.1.stable.1`
-2. Push: `git push origin v0.1.stable.1`
-3. Create a GitHub release from the tag
-4. CI builds RPMs for all distros and uploads them as release assets
-
-Tag format: `v{version}.{channel}.{release}` (e.g., `v0.1.stable.1`)
-
-Channels: `testing`, `latest`, `stable`
-
-## Signing (not yet active)
-
-GPG signing scripts exist under `policy/*/scripts/sign`. To enable:
-
-1. Generate a GPG keypair for `ci@loft.sh`
-2. Store the private key and passphrase as GitHub secrets
-3. Wire the sign step into the release workflow
