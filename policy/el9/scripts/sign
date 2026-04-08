@@ -1,35 +1,48 @@
-#!/usr/bin/env bash
-set -eo pipefail
+#!/bin/bash
+set -e -x
 
-# Sign RPMs with GPG key.
-# Expects PRIVATE_KEY (GPG private key, armored) and
-# PRIVATE_KEY_PASS_PHRASE as environment variables.
+yum install -y rpm-sign expect git
 
-cd "$(dirname "$0")/.."
+pushd $(dirname $0)/..
+. ./scripts/version
+popd
 
-if [ -z "${PRIVATE_KEY}" ]; then
-    echo "error: PRIVATE_KEY not set" >&2
-    exit 1
-fi
-
-if [ -z "${PRIVATE_KEY_PASS_PHRASE}" ]; then
-    echo "error: PRIVATE_KEY_PASS_PHRASE not set" >&2
-    exit 1
-fi
-
-cat <<EOF > ~/.rpmmacros
+cat <<\EOF >~/.rpmmacros
 %_signature gpg
-%_gpg_path /root/.gnupg
 %_gpg_name ci@loft.sh
-%__gpg_sign_cmd %{__gpg} gpg --batch --no-verbose --no-armor --passphrase-fd 3 --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
+%__gpg_sign_cmd %{__gpg} gpg --force-v3-sigs --batch --verbose --no-armor --passphrase-fd 3 --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}
+%_source_filedigest_algorithm 8
+%_binary_filedigest_algorithm 8
 EOF
 
-echo "${PRIVATE_KEY}" | gpg --batch --import
+case "$RPM_CHANNEL" in
+  "testing")
+    export PRIVATE_KEY_PASS_PHRASE=$TESTING_PRIVATE_KEY_PASS_PHRASE
+    if ! grep "BEGIN PGP PRIVATE KEY BLOCK" <<<"$TESTING_PRIVATE_KEY"; then
+      echo "TESTING_PRIVATE_KEY not defined, failing rpm sign"
+      exit 1
+    fi
+    gpg --import - <<<"$TESTING_PRIVATE_KEY"
+    ;;
+  "latest"|"stable")
+    if ! grep "BEGIN PGP PRIVATE KEY BLOCK" <<<"$PRIVATE_KEY"; then
+      echo "PRIVATE_KEY not defined, failing rpm sign"
+      exit 1
+    fi
+    gpg --import - <<<"$PRIVATE_KEY"
+    ;;
+  *)
+    echo "RPM_CHANNEL $RPM_CHANNEL does not match one of: [testing, latest, stable]"
+    exit 1
+    ;;
+esac
 
-DISTRO=$(rpm -E %{dist} | sed 's/^\.//')
-for rpm in /source/dist/${DISTRO}/noarch/*.rpm; do
-    echo "Signing ${rpm}..."
-    echo "${PRIVATE_KEY_PASS_PHRASE}" | rpmsign --addsign "${rpm}" 3<&0
-done
-
-echo "Signing complete."
+expect <<EOF
+set timeout 60
+spawn sh -c "rpmsign --addsign dist/el9/**/vcluster-*.rpm"
+expect "Enter pass phrase:"
+send -- "$PRIVATE_KEY_PASS_PHRASE\r"
+expect eof
+lassign [wait] _ _ _ code
+exit \$code
+EOF

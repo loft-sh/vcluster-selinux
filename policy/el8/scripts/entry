@@ -1,15 +1,8 @@
-#!/usr/bin/env bash
-set -eo pipefail
+#!/bin/sh
+set -ex
 
-cd "$(dirname "$0")/.."
-
-if [ -f "./scripts/${1}" ]; then
-    ./scripts/"$1"
+if [ -e ./policy/el8/scripts/"$1" ]; then
+    ./policy/el8/scripts/"$@"
 else
     exec "$@"
-fi
-
-# Fix file ownership for container builds
-if [ -n "${DAPPER_UID}" ] && [ -n "${DAPPER_GID}" ]; then
-    chown -R "${DAPPER_UID}:${DAPPER_GID}" /source/dist 2>/dev/null || :
 fi

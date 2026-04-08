@@ -1,31 +1,29 @@
-TAG ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.0.dev.0")
-DISTROS := $(notdir $(wildcard policy/*))
+UPLOAD_TARGETS := $(addprefix upload-,$(shell ls policy/))
+BUILD_TARGETS := $(addprefix build-,$(shell ls policy/))
+SIGN_TARGETS := $(addprefix sign-,$(shell ls policy/))
 
-.PHONY: all clean $(addprefix build-,$(DISTROS)) $(addprefix sign-,$(DISTROS))
-
-all: $(addprefix build-,$(DISTROS))
-
-define DISTRO_TARGETS
-build-$(1):
+$(BUILD_TARGETS):
 	docker buildx build \
-		--build-arg TAG=$(TAG) \
-		--build-arg SCRIPT=build \
-		-f Dockerfile.$(1) \
-		-o type=local,dest=./dist/$(1) \
-		.
+      --target result --output=. \
+      --build-arg TAG=${TAG} \
+      --build-arg SCRIPT=build \
+      -f Dockerfile.$(@:build-%=%) .
 
-sign-$(1):
+$(SIGN_TARGETS):
 	docker buildx build \
-		--build-arg TAG=$(TAG) \
-		--build-arg SCRIPT=sign \
-		--secret id=private_key,env=PRIVATE_KEY \
-		--secret id=private_key_pass,env=PRIVATE_KEY_PASS_PHRASE \
-		-f Dockerfile.$(1) \
-		-o type=local,dest=./dist/$(1) \
-		.
-endef
+      --target result --output=. \
+      --build-arg TAG=${TAG} \
+      --build-arg SCRIPT=sign \
+      -f Dockerfile.$(@:sign-%=%) .
 
-$(foreach distro,$(DISTROS),$(eval $(call DISTRO_TARGETS,$(distro))))
+$(UPLOAD_TARGETS):
+	docker buildx build \
+      --target result --output=. \
+      --build-arg TAG=${TAG} \
+      --build-arg SCRIPT=upload \
+      -f Dockerfile.$(@:upload-%=%) .
 
 clean:
 	rm -rf dist/
+
+.PHONY: $(UPLOAD_TARGETS) $(BUILD_TARGETS) $(SIGN_TARGETS) clean

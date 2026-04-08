@@ -1,24 +1,55 @@
-#!/usr/bin/env bash
-set -eo pipefail
+#!/bin/bash
 
-# Extract RPM version components from git tag.
-# Tag format: v{version}.{channel}.{release}
-# Example: v0.1.stable.1 → RPM_VERSION=0.1, RPM_CHANNEL=stable, RPM_RELEASE=1
+TREE_STATE=clean
+COMMIT=${COMMIT:-${GITHUB_SHA:-unknown}}
+TAG=${TAG:-$GITHUB_TAG}
 
-if [ -z "${TAG}" ]; then
-    TAG=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.0.dev.0")
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    DIRTY="dirty"
+    TREE_STATE=dirty
 fi
 
-if ! [[ "${TAG}" =~ ^v([0-9]+\.[0-9]+)\.(testing|stable)\.([0-9]+)$ ]]; then
-    echo "error: tag '${TAG}' does not match format v{version}.{channel}.{release}" >&2
-    echo "example: v0.1.stable.1" >&2
+if [[ "$TREE_STATE" == "clean" && -z "$TAG" ]]; then
+    TAG=$(git tag -l --contains HEAD | head -n 1)
+fi
+
+COMMIT=$(git log -n3 --pretty=format:"%H %ae" | cut -f1 -d\  | head -1)
+if [ -z "$COMMIT" ]; then
+    COMMIT=$(git rev-parse HEAD || true)
+fi
+
+if [[ -n "$TAG" ]]; then
+    if [[ "$TREE_STATE" = "clean" ]]; then
+        VERSION=$TAG
+    fi
+else
+    VERSION="v0.0~${COMMIT:0:8}${DIRTY}.testing.0"
+fi
+
+if ! [[ $VERSION =~ ^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.[a-z]+\.[0-9]+$ ]]; then
+    echo "Version $VERSION does not match our expected format. Exiting."
     exit 1
 fi
 
-export RPM_VERSION="${BASH_REMATCH[1]}"
-export RPM_CHANNEL="${BASH_REMATCH[2]}"
-export RPM_RELEASE="${BASH_REMATCH[3]}"
+rpm_version_regex='s/\-/~/g; s/^v([0-9]+\.[0-9]+[-~a-zA-Z0-9]*)\.[a-z]+\.[0-9]+$/\1/;'
+rpm_channel_regex='s/^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.([a-z]+)\.[0-9]+$/\1/;'
+rpm_release_regex='s/^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.[a-z]+\.([0-9]+)$/\1/;'
 
-echo "RPM_VERSION=${RPM_VERSION}"
-echo "RPM_CHANNEL=${RPM_CHANNEL}"
-echo "RPM_RELEASE=${RPM_RELEASE}"
+RPM_VERSION=$(sed -E -e "$rpm_version_regex" <<<"$VERSION")
+RPM_RELEASE=$(sed -E -e "$rpm_release_regex" <<<"$VERSION")
+RPM_CHANNEL=$(sed -E -e "$rpm_channel_regex" <<<"$VERSION")
+
+if [[ "$RPM_CHANNEL" == "$VERSION" ]]; then
+    echo "Unknown RPM_CHANNEL found: $RPM_CHANNEL but defaulting to testing"
+    RPM_CHANNEL="testing"
+fi
+
+case "$RPM_CHANNEL" in
+    "testing"|"latest"|"stable")
+        echo "RPM_CHANNEL matched our expected variants"
+        ;;
+    *)
+        echo "RPM_CHANNEL $RPM_CHANNEL does not match one of: [testing, latest, stable]"
+        exit 1
+        ;;
+esac

@@ -1,20 +1,20 @@
 FROM rockylinux:8 AS build
 
-RUN dnf install -y \
-    rpm-build \
-    selinux-policy-devel \
-    make \
-    git \
-    && dnf clean all
+RUN yum install -y epel-release \
+ && yum -y install container-selinux git rpm-build selinux-policy-devel yum-utils ca-certificates
 
-COPY . /source
-WORKDIR /source
+ENV SOURCE=/source
+
+WORKDIR ${SOURCE}
+
+COPY . .
 
 ARG TAG
-ENV TAG=${TAG}
-
 ARG SCRIPT=build
-RUN ./policy/el8/scripts/entry ${SCRIPT}
 
-FROM scratch
-COPY --from=build /source/dist /dist
+RUN ${SOURCE}/policy/el8/scripts/entry "${SCRIPT}"
+
+FROM scratch AS result
+ENV SOURCE=/source
+
+COPY --from=build ${SOURCE}/dist /dist
