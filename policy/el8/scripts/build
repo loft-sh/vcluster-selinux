@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+cd "$(dirname "$0")/.."
+
+source ./scripts/version
+
+echo "Building vcluster-selinux RPM: version=${RPM_VERSION} release=${RPM_RELEASE}"
+
+# Compile SELinux policy module
+make -f /usr/share/selinux/devel/Makefile vcluster.pp
+
+# Set up rpmbuild directory structure
+mkdir -p /root/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+# Copy spec and policy
+cp vcluster-selinux.spec /root/rpmbuild/SPECS/
+cp vcluster.pp /root/rpmbuild/BUILD/
+
+# Build the RPM
+rpmbuild -bb \
+    --define "rpm_version ${RPM_VERSION}" \
+    --define "rpm_release ${RPM_RELEASE}" \
+    --define "_sourcedir $(pwd)" \
+    /root/rpmbuild/SPECS/vcluster-selinux.spec
+
+# Copy output to dist/
+DISTRO=$(rpm -E %{dist} | sed 's/^\.//')
+mkdir -p /source/dist/${DISTRO}/noarch
+cp /root/rpmbuild/RPMS/noarch/*.rpm /source/dist/${DISTRO}/noarch/
+
+echo "Build complete. RPMs:"
+ls -la /source/dist/${DISTRO}/noarch/

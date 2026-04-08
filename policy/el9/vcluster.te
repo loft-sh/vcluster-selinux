@@ -1,0 +1,43 @@
+policy_module(vcluster, 0.1.0)
+
+########################################
+#
+# Declarations
+#
+
+require {
+	type container_runtime_t;
+	type container_t;
+	type container_file_t;
+	type spc_t;
+	class process { transition signal_perms };
+	class file { manage_file_perms relabel_file_perms };
+	class dir { manage_dir_perms relabel_dir_perms };
+	class sock_file { manage_file_perms };
+}
+
+# vcluster syncer domain
+type vcluster_syncer_t;
+domain_type(vcluster_syncer_t)
+
+# vcluster data files
+type vcluster_data_t;
+files_type(vcluster_data_t)
+
+########################################
+#
+# vcluster syncer policy
+#
+
+# Allow syncer to manage vcluster data
+allow vcluster_syncer_t vcluster_data_t:dir manage_dir_perms;
+allow vcluster_syncer_t vcluster_data_t:file manage_file_perms;
+allow vcluster_syncer_t vcluster_data_t:sock_file manage_file_perms;
+
+# Allow container runtime to transition to syncer domain
+allow container_runtime_t vcluster_syncer_t:process transition;
+
+# Allow syncer to interact with container types
+allow vcluster_syncer_t container_t:process signal_perms;
+allow vcluster_syncer_t container_file_t:file manage_file_perms;
+allow vcluster_syncer_t container_file_t:dir manage_dir_perms;

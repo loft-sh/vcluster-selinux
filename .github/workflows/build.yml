@@ -1,0 +1,31 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        distro: [el8, el9]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build RPM (${{ matrix.distro }})
+        run: make build-${{ matrix.distro }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpms-${{ matrix.distro }}
+          path: dist/

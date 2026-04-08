@@ -1,0 +1,20 @@
+FROM rockylinux:9 AS build
+
+RUN dnf install -y \
+    rpm-build \
+    selinux-policy-devel \
+    make \
+    git \
+    && dnf clean all
+
+COPY . /source
+WORKDIR /source
+
+ARG TAG
+ENV TAG=${TAG}
+
+ARG SCRIPT=build
+RUN ./policy/el9/scripts/entry ${SCRIPT}
+
+FROM scratch
+COPY --from=build /source/dist /dist

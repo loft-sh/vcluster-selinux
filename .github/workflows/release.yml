@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        distro: [el8, el9]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build RPM (${{ matrix.distro }})
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: make build-${{ matrix.distro }} TAG=${TAG}
+
+      - name: Generate checksums
+        run: |
+          cd dist/
+          find . -name '*.rpm' -exec sha256sum {} \; > SHA256SUMS-${{ matrix.distro }}.txt
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          find dist/ -name '*.rpm' -exec gh release upload "${{ github.event.release.tag_name }}" {} \;
+          gh release upload "${{ github.event.release.tag_name }}" dist/SHA256SUMS-${{ matrix.distro }}.txt

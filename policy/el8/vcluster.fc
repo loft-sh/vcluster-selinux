@@ -1,0 +1,6 @@
+# vcluster file contexts
+#
+# Paths will be updated once the policy team defines
+# the actual vcluster component file locations.
+
+/var/lib/vcluster(/.*)?         gen_context(system_u:object_r:vcluster_data_t,s0)

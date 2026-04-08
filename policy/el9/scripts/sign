@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+# Sign RPMs with GPG key.
+# Expects PRIVATE_KEY (GPG private key, armored) and
+# PRIVATE_KEY_PASS_PHRASE as environment variables.
+
+cd "$(dirname "$0")/.."
+
+if [ -z "${PRIVATE_KEY}" ]; then
+    echo "error: PRIVATE_KEY not set" >&2
+    exit 1
+fi
+
+if [ -z "${PRIVATE_KEY_PASS_PHRASE}" ]; then
+    echo "error: PRIVATE_KEY_PASS_PHRASE not set" >&2
+    exit 1
+fi
+
+cat <<EOF > ~/.rpmmacros
+%_signature gpg
+%_gpg_path /root/.gnupg
+%_gpg_name ci@loft.sh
+%__gpg_sign_cmd %{__gpg} gpg --batch --no-verbose --no-armor --passphrase-fd 3 --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
+EOF
+
+echo "${PRIVATE_KEY}" | gpg --batch --import
+
+DISTRO=$(rpm -E %{dist} | sed 's/^\.//')
+for rpm in /source/dist/${DISTRO}/noarch/*.rpm; do
+    echo "Signing ${rpm}..."
+    echo "${PRIVATE_KEY_PASS_PHRASE}" | rpmsign --addsign "${rpm}" 3<&0
+done
+
+echo "Signing complete."
