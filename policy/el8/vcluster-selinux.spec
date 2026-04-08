@@ -3,8 +3,8 @@
         restorecon -R -T 0 -i /var/lib/vcluster
 
 %define selinux_policyver 3.14.3-67
-%define container_policyver 2.191.0-1
-%define container_policy_epoch 3
+%define container_policyver 2.167.0-1
+%define container_policy_epoch 2
 
 Name:       vcluster-selinux
 Version:    %{vcluster_selinux_version}
