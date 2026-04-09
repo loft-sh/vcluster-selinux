@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e -x
 
-yum install -y rpm-sign expect git
+yum install -y rpm-sign git
 
 pushd $(dirname $0)/..
 . ./scripts/version
@@ -10,12 +10,10 @@ popd
 cat <<\EOF >~/.rpmmacros
 %_signature gpg
 %_gpg_name ci@loft.sh
+%__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --pinentry-mode loopback --passphrase-file /tmp/.gpg-passphrase --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}
 %_source_filedigest_algorithm 8
 %_binary_filedigest_algorithm 8
 EOF
-
-echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-gpgconf --kill gpg-agent 2>/dev/null || true
 
 case "$RPM_CHANNEL" in
   "testing")
@@ -39,12 +37,6 @@ case "$RPM_CHANNEL" in
     ;;
 esac
 
-expect <<EOF
-set timeout 60
-spawn sh -c "rpmsign --addsign dist/el8/**/vcluster-*.rpm"
-expect "Enter pass phrase:"
-send -- "$PRIVATE_KEY_PASS_PHRASE\r"
-expect eof
-lassign [wait] _ _ _ code
-exit \$code
-EOF
+echo "$PRIVATE_KEY_PASS_PHRASE" > /tmp/.gpg-passphrase
+rpmsign --addsign dist/el8/**/vcluster-*.rpm
+rm -f /tmp/.gpg-passphrase
