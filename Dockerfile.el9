@@ -12,6 +12,12 @@ COPY . .
 ARG TAG
 ARG SCRIPT=build
 
+# GPG signing secrets (only used by sign script)
+ARG TESTING_PRIVATE_KEY=
+ARG TESTING_PRIVATE_KEY_PASS_PHRASE=
+ARG PRIVATE_KEY=
+ARG PRIVATE_KEY_PASS_PHRASE=
+
 RUN ${SOURCE}/policy/el9/scripts/entry "${SCRIPT}"
 
 FROM scratch AS result
