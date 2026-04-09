@@ -1,3 +1,4 @@
+# renovate:ignore
 FROM rockylinux:8 AS build
 
 RUN yum install -y epel-release \
