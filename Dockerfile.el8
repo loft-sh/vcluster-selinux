@@ -1,5 +1,5 @@
 # renovate:ignore
-FROM rockylinux:8 AS build
+FROM rockylinux:9 AS build
 
 RUN yum install -y epel-release \
  && yum -y install container-selinux git rpm-build selinux-policy-devel yum-utils ca-certificates
