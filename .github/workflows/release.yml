@@ -36,6 +36,24 @@ jobs:
             --build-arg SCRIPT=build \
             -f Dockerfile.${{ matrix.os }} .
 
+      - name: Sign
+        env:
+          TAG: ${{ github.ref_name }}
+          TESTING_PRIVATE_KEY: ${{ secrets.TESTING_PRIVATE_KEY }}
+          TESTING_PRIVATE_KEY_PASS_PHRASE: ${{ secrets.TESTING_PRIVATE_KEY_PASS_PHRASE }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASS_PHRASE: ${{ secrets.PRIVATE_KEY_PASS_PHRASE }}
+        run: |
+          docker buildx build \
+            --target result --output=. \
+            --build-arg TAG="${TAG}" \
+            --build-arg SCRIPT=sign \
+            --build-arg "TESTING_PRIVATE_KEY=${TESTING_PRIVATE_KEY}" \
+            --build-arg "TESTING_PRIVATE_KEY_PASS_PHRASE=${TESTING_PRIVATE_KEY_PASS_PHRASE}" \
+            --build-arg "PRIVATE_KEY=${PRIVATE_KEY}" \
+            --build-arg "PRIVATE_KEY_PASS_PHRASE=${PRIVATE_KEY_PASS_PHRASE}" \
+            -f Dockerfile.${{ matrix.os }} .
+
       - name: Checksum
         run: |
           find dist/${{ matrix.os }}/noarch/*.rpm -type f | while read -r file; do
