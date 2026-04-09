@@ -21,6 +21,12 @@ jobs:
       run: |
         make build-el8
 
+    - name: Upload RPM
+      uses: actions/upload-artifact@v4
+      with:
+        name: rpm-el8
+        path: dist/el8/noarch/*.rpm
+
   build-rpm-el9:
     runs-on: ubuntu-latest
     steps:
@@ -32,3 +38,36 @@ jobs:
     - name: build-rpm
       run: |
         make build-el9
+
+    - name: Upload RPM
+      uses: actions/upload-artifact@v4
+      with:
+        name: rpm-el9
+        path: dist/el9/noarch/*.rpm
+
+  test-rpm:
+    needs: [build-rpm-el8, build-rpm-el9]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: el8
+            image: rockylinux:8
+          - os: el9
+            image: quay.io/centos/centos:stream9
+    steps:
+      - name: Download RPM
+        uses: actions/download-artifact@v4
+        with:
+          name: rpm-${{ matrix.os }}
+
+      - name: Test RPM install
+        run: |
+          docker run --rm -v $PWD:/rpms ${{ matrix.image }} bash -c '
+            set -ex
+            yum install -y /rpms/vcluster-selinux-*.noarch.rpm
+            semodule -l | grep vcluster
+            mkdir -p /var/lib/vcluster
+            restorecon -v /var/lib/vcluster
+          '
