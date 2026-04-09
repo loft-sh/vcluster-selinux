@@ -12,13 +12,15 @@ COPY . .
 ARG TAG
 ARG SCRIPT=build
 
-# GPG signing secrets (only used by sign script)
-ARG TESTING_PRIVATE_KEY=
-ARG TESTING_PRIVATE_KEY_PASS_PHRASE=
-ARG PRIVATE_KEY=
-ARG PRIVATE_KEY_PASS_PHRASE=
-
-RUN ${SOURCE}/policy/el9/scripts/entry "${SCRIPT}"
+RUN --mount=type=secret,id=testing_private_key \
+    --mount=type=secret,id=testing_private_key_pass_phrase \
+    --mount=type=secret,id=private_key \
+    --mount=type=secret,id=private_key_pass_phrase \
+    TESTING_PRIVATE_KEY="$(cat /run/secrets/testing_private_key 2>/dev/null || true)" \
+    TESTING_PRIVATE_KEY_PASS_PHRASE="$(cat /run/secrets/testing_private_key_pass_phrase 2>/dev/null || true)" \
+    PRIVATE_KEY="$(cat /run/secrets/private_key 2>/dev/null || true)" \
+    PRIVATE_KEY_PASS_PHRASE="$(cat /run/secrets/private_key_pass_phrase 2>/dev/null || true)" \
+    ${SOURCE}/policy/el9/scripts/entry "${SCRIPT}"
 
 FROM scratch AS result
 ENV SOURCE=/source

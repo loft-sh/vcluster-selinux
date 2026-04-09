@@ -44,15 +44,20 @@ jobs:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASS_PHRASE: ${{ secrets.PRIVATE_KEY_PASS_PHRASE }}
         run: |
+          echo "${TESTING_PRIVATE_KEY}" > /tmp/testing_private_key
+          echo "${TESTING_PRIVATE_KEY_PASS_PHRASE}" > /tmp/testing_private_key_pass_phrase
+          echo "${PRIVATE_KEY}" > /tmp/private_key
+          echo "${PRIVATE_KEY_PASS_PHRASE}" > /tmp/private_key_pass_phrase
           docker buildx build \
             --target result --output=. \
             --build-arg TAG="${TAG}" \
             --build-arg SCRIPT=sign \
-            --build-arg "TESTING_PRIVATE_KEY=${TESTING_PRIVATE_KEY}" \
-            --build-arg "TESTING_PRIVATE_KEY_PASS_PHRASE=${TESTING_PRIVATE_KEY_PASS_PHRASE}" \
-            --build-arg "PRIVATE_KEY=${PRIVATE_KEY}" \
-            --build-arg "PRIVATE_KEY_PASS_PHRASE=${PRIVATE_KEY_PASS_PHRASE}" \
+            --secret id=testing_private_key,src=/tmp/testing_private_key \
+            --secret id=testing_private_key_pass_phrase,src=/tmp/testing_private_key_pass_phrase \
+            --secret id=private_key,src=/tmp/private_key \
+            --secret id=private_key_pass_phrase,src=/tmp/private_key_pass_phrase \
             -f Dockerfile.${{ matrix.os }} .
+          rm -f /tmp/testing_private_key /tmp/testing_private_key_pass_phrase /tmp/private_key /tmp/private_key_pass_phrase
 
       - name: Checksum
         run: |
