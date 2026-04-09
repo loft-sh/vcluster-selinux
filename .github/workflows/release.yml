@@ -74,3 +74,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload ${{ github.ref_name }} dist/${{ matrix.os }}/noarch/* dist/${{ matrix.os }}/source/*
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::970547378862:role/github-actions-rpm-upload
+          aws-region: us-east-2
+
+      - name: Upload to S3
+        run: |
+          CHANNEL=$(echo "${{ github.ref_name }}" | sed -E 's/^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.([a-z]+)\.[0-9]+$/\1/')
+          aws s3 cp dist/${{ matrix.os }}/noarch/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ --recursive
+          aws s3 cp dist/${{ matrix.os }}/source/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ --recursive
