@@ -9,65 +9,70 @@ permissions:
   contents: read
 
 jobs:
-  build-rpm-el8:
+  lint:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v6
+      - name: Static policy lint (selint + sepolgen-ifgen)
+        run: make lint
 
-    - name: build-rpm
-      run: |
-        make build-el8
-
-    - name: Upload RPM
-      uses: actions/upload-artifact@v4
-      with:
-        name: rpm-el8
-        path: dist/el8/noarch/*.rpm
-
-  build-rpm-el9:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-
-    - name: build-rpm
-      run: |
-        make build-el9
-
-    - name: Upload RPM
-      uses: actions/upload-artifact@v4
-      with:
-        name: rpm-el9
-        path: dist/el9/noarch/*.rpm
-
-  test-rpm:
-    needs: [build-rpm-el8, build-rpm-el9]
+  build:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: el8
-            image: rockylinux:8
-          - os: el9
-            image: quay.io/centos/centos:stream9
+        os: [el8, el9]
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build RPM
+        run: make build-${{ matrix.os }}
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.os }}
+          path: dist/${{ matrix.os }}/noarch/*.rpm
+
+  verify-rpm:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [el8, el9]
+    steps:
+      - uses: actions/checkout@v6
+
       - name: Download RPM
         uses: actions/download-artifact@v4
         with:
           name: rpm-${{ matrix.os }}
+          path: dist/${{ matrix.os }}/noarch/
 
-      - name: Test RPM install
+      - name: Verify install + contexts + rules + uninstall
+        run: make verify-${{ matrix.os }}
+
+  verify-consistency:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: el8 and el9 policy files are identical
         run: |
-          docker run --rm -v $PWD:/rpms ${{ matrix.image }} bash -c '
-            set -ex
-            yum install -y /rpms/vcluster-selinux-*.noarch.rpm
-            semodule -l | grep vcluster
-            mkdir -p /var/lib/vcluster
-            restorecon -v /var/lib/vcluster
-          '
+          diff policy/el8/vcluster.te policy/el9/vcluster.te
+          diff policy/el8/vcluster.fc policy/el9/vcluster.fc
+          diff policy/el8/vcluster.if policy/el9/vcluster.if
+
+      - name: spec differences are only version-related
+        run: |
+          # Expected-only diffs: restorecon flag, container-selinux version, release tag.
+          diff policy/el8/vcluster-selinux.spec policy/el9/vcluster-selinux.spec \
+            | grep "^[<>]" \
+            | grep -v "restorecon" \
+            | grep -v "container_policyver\|container_policy_epoch" \
+            | grep -v "\.el[89]" \
+            | { ! grep . ; }
