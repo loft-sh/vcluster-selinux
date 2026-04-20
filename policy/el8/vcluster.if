@@ -1,4 +1,4 @@
-## <summary>Policy for vcluster virtual Kubernetes clusters.</summary>
+## <summary>Policy for vCluster virtual Kubernetes clusters.</summary>
 
 ########################################
 ## <summary>
@@ -17,4 +17,7 @@ interface(`vcluster_manage_data',`
 
 	manage_dirs_pattern($1, vcluster_data_t, vcluster_data_t)
 	manage_files_pattern($1, vcluster_data_t, vcluster_data_t)
+	manage_sock_files_pattern($1, vcluster_data_t, vcluster_data_t)
+	manage_lnk_files_pattern($1, vcluster_data_t, vcluster_data_t)
+	manage_fifo_files_pattern($1, vcluster_data_t, vcluster_data_t)
 ')
