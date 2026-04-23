@@ -73,7 +73,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ github.ref_name }} dist/${{ matrix.os }}/noarch/* dist/${{ matrix.os }}/source/*
+          gh release upload "${{ github.ref_name }}" dist/${{ matrix.os }}/noarch/* dist/${{ matrix.os }}/source/*
+
+      - name: Install createrepo_c
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y createrepo-c
+
+      - name: Derive channel
+        run: |
+          CHANNEL=$(echo "${{ github.ref_name }}" | sed -E 's/^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.([a-z]+)\.[0-9]+$/\1/')
+          if ! [[ "$CHANNEL" =~ ^[a-z]+$ ]]; then
+            echo "failed to derive release channel from tag: ${{ github.ref_name }}" >&2
+            exit 1
+          fi
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -81,8 +95,64 @@ jobs:
           role-to-assume: arn:aws:iam::970547378862:role/github-actions-rpm-upload
           aws-region: us-east-2
 
-      - name: Upload to S3
+      - name: Pull existing channel RPMs
         run: |
-          CHANNEL=$(echo "${{ github.ref_name }}" | sed -E 's/^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.([a-z]+)\.[0-9]+$/\1/')
-          aws s3 cp dist/${{ matrix.os }}/noarch/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ --recursive
-          aws s3 cp dist/${{ matrix.os }}/source/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ --recursive
+          mkdir -p /tmp/existing-noarch /tmp/existing-source
+          aws s3 sync \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ \
+            /tmp/existing-noarch/ \
+            --exclude 'repodata/*'
+          aws s3 sync \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ \
+            /tmp/existing-source/ \
+            --exclude 'repodata/*'
+          shopt -s nullglob
+          for f in /tmp/existing-noarch/*.rpm; do
+            name=$(basename "$f")
+            [ -f "dist/${{ matrix.os }}/noarch/$name" ] || cp "$f" "dist/${{ matrix.os }}/noarch/$name"
+          done
+          for f in /tmp/existing-source/*.rpm; do
+            name=$(basename "$f")
+            [ -f "dist/${{ matrix.os }}/source/$name" ] || cp "$f" "dist/${{ matrix.os }}/source/$name"
+          done
+
+      - name: Generate repo metadata
+        run: |
+          bash .github/scripts/create-rpm-repo.sh \
+            dist/${{ matrix.os }}/noarch \
+            dist/${{ matrix.os }}/source
+
+      - name: Sign repomd.xml
+        env:
+          CHANNEL_KEY: ${{ env.CHANNEL == 'testing' && secrets.TESTING_PRIVATE_KEY || secrets.PRIVATE_KEY }}
+          CHANNEL_PASS: ${{ env.CHANNEL == 'testing' && secrets.TESTING_PRIVATE_KEY_PASS_PHRASE || secrets.PRIVATE_KEY_PASS_PHRASE }}
+        run: |
+          echo "$CHANNEL_KEY" | gpg --batch --pinentry-mode loopback --passphrase "$CHANNEL_PASS" --import
+          for d in dist/${{ matrix.os }}/noarch dist/${{ matrix.os }}/source; do
+            echo "$CHANNEL_PASS" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+              --detach-sign --armor "$d/repodata/repomd.xml"
+          done
+
+      - name: Upload RPMs to S3
+        run: |
+          aws s3 sync \
+            dist/${{ matrix.os }}/noarch/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ \
+            --exclude 'repodata/*'
+          aws s3 sync \
+            dist/${{ matrix.os }}/source/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ \
+            --exclude 'repodata/*'
+
+      - name: Upload repo metadata to S3
+        run: |
+          aws s3 sync \
+            dist/${{ matrix.os }}/noarch/repodata/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/repodata/ \
+            --delete \
+            --cache-control 'no-cache, max-age=0'
+          aws s3 sync \
+            dist/${{ matrix.os }}/source/repodata/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/repodata/ \
+            --delete \
+            --cache-control 'no-cache, max-age=0'

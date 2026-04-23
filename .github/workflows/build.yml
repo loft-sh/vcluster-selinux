@@ -30,6 +30,17 @@ jobs:
       - name: Build RPM
         run: make build-${{ matrix.os }}
 
+      - name: Install createrepo_c
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y createrepo-c
+
+      - name: Verify repo metadata generation
+        run: |
+          bash .github/scripts/create-rpm-repo.sh \
+            dist/${{ matrix.os }}/noarch \
+            dist/${{ matrix.os }}/source
+
       - name: Upload RPM
         uses: actions/upload-artifact@v4
         with:
