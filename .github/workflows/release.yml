@@ -89,19 +89,59 @@ jobs:
           fi
           echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
 
-      - name: Generate repo metadata
-        run: |
-          bash .github/scripts/create-rpm-repo.sh \
-            dist/${{ matrix.os }}/noarch \
-            dist/${{ matrix.os }}/source
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::970547378862:role/github-actions-rpm-upload
           aws-region: us-east-2
 
-      - name: Upload to S3
+      - name: Pull existing channel RPMs
         run: |
-          aws s3 sync dist/${{ matrix.os }}/noarch/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ --delete
-          aws s3 sync dist/${{ matrix.os }}/source/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ --delete
+          mkdir -p /tmp/existing-noarch /tmp/existing-source
+          aws s3 sync \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ \
+            /tmp/existing-noarch/ \
+            --exclude 'repodata/*'
+          aws s3 sync \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ \
+            /tmp/existing-source/ \
+            --exclude 'repodata/*'
+          shopt -s nullglob
+          for f in /tmp/existing-noarch/*.rpm; do
+            name=$(basename "$f")
+            [ -f "dist/${{ matrix.os }}/noarch/$name" ] || cp "$f" "dist/${{ matrix.os }}/noarch/$name"
+          done
+          for f in /tmp/existing-source/*.rpm; do
+            name=$(basename "$f")
+            [ -f "dist/${{ matrix.os }}/source/$name" ] || cp "$f" "dist/${{ matrix.os }}/source/$name"
+          done
+
+      - name: Generate repo metadata
+        run: |
+          bash .github/scripts/create-rpm-repo.sh \
+            dist/${{ matrix.os }}/noarch \
+            dist/${{ matrix.os }}/source
+
+      - name: Upload RPMs to S3
+        run: |
+          aws s3 sync \
+            dist/${{ matrix.os }}/noarch/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ \
+            --exclude 'repodata/*'
+          aws s3 sync \
+            dist/${{ matrix.os }}/source/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ \
+            --exclude 'repodata/*'
+
+      - name: Upload repo metadata to S3
+        run: |
+          aws s3 sync \
+            dist/${{ matrix.os }}/noarch/repodata/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/repodata/ \
+            --delete \
+            --cache-control 'no-cache, max-age=0'
+          aws s3 sync \
+            dist/${{ matrix.os }}/source/repodata/ \
+            s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/repodata/ \
+            --delete \
+            --cache-control 'no-cache, max-age=0'
