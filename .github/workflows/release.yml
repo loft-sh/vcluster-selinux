@@ -73,7 +73,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.ref_name }}" --clobber dist/${{ matrix.os }}/noarch/* dist/${{ matrix.os }}/source/*
+          gh release upload "${{ github.ref_name }}" dist/${{ matrix.os }}/noarch/* dist/${{ matrix.os }}/source/*
 
       - name: Install createrepo_c
         run: |
