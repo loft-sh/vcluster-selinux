@@ -1,0 +1,95 @@
+name: SELinux E2E Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'policy/**'
+      - 'test/**'
+      - '.github/**'
+      - 'Makefile'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} RPM
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [el8, el9]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build RPM
+        run: make build-${{ matrix.os }}
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.os }}-e2e
+          path: dist/${{ matrix.os }}/noarch/*.rpm
+
+  e2e-kvm:
+    name: E2E ${{ matrix.name }} (KVM, enforcing)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: AlmaLinux 9
+            rpm_arch: el9
+            image_url: https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2
+            k8s_version: ''   # uses install-standalone default
+          - name: Rocky 8
+            rpm_arch: el8
+            image_url: https://download.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud.latest.x86_64.qcow2
+            # el8 ships glibc 2.28; the containerd in the default k8s 1.35
+            # bundle is built against glibc 2.32+ and won't link. Pin to a
+            # k8s 1.31.x image whose containerd was built against 2.28.
+            k8s_version: v1.31.11
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download RPM
+        uses: actions/download-artifact@v4
+        with:
+          name: rpm-${{ matrix.rpm_arch }}-e2e
+          path: dist/
+
+      - name: Install KVM + cloud-init tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-kvm qemu-utils cloud-image-utils openssh-client curl
+          # Standard runners grant /dev/kvm to the runner user, but the group
+          # varies by runner generation. Make the node readable unconditionally.
+          sudo chmod 666 /dev/kvm
+          ls -l /dev/kvm
+
+      - name: Run BATS suite inside the VM
+        env:
+          VM_IMAGE_URL: ${{ matrix.image_url }}
+          K8S_VERSION_OVERRIDE: ${{ matrix.k8s_version }}
+        run: |
+          RPM=$(ls dist/vcluster-selinux-*.noarch.rpm | head -n1)
+          .github/scripts/run-vm-tests.sh "$RPM" test/
+
+      - name: Upload serial console on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kvm-qemu-log-${{ matrix.rpm_arch }}-${{ matrix.name }}
+          path: /tmp/qemu.log
+          if-no-files-found: ignore

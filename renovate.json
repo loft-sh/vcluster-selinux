@@ -3,5 +3,21 @@
   "extends": [
     "config:recommended"
   ],
-  "labels": ["dependencies"]
+  "labels": ["dependencies"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": ["\\bfedora:(?<currentValue>[^\\s]+)"],
+      "depNameTemplate": "fedora",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^test/.+\\.bats$/"],
+      "matchStrings": ["docker\\.io/library/busybox:(?<currentValue>[^\\s]+)"],
+      "depNameTemplate": "docker.io/library/busybox",
+      "datasourceTemplate": "docker"
+    }
+  ]
 }

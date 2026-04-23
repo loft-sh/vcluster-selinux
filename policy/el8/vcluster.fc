@@ -1,6 +1,49 @@
-# vcluster file contexts
+# vim: sw=8:ts=8:et
 #
-# Paths will be updated once the policy team defines
-# the actual vcluster component file locations.
+# vCluster file contexts
+#
+# Paths NOT covered by container-selinux that vCluster needs.
+# Do NOT duplicate paths already in container-selinux (containerd,
+# kubelet, runc, /etc/containerd, /var/lib/containerd, etc).
+#
 
-/var/lib/vcluster(/.*)?         gen_context(system_u:object_r:vcluster_data_t,s0)
+# --- systemd units ---
+/etc/systemd/system/vcluster[^/]*                               --  gen_context(system_u:object_r:container_unit_file_t,s0)
+
+# --- vcluster main binary: transitions to container_runtime_t via systemd ---
+/var/lib/vcluster/bin/vcluster                                  --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+
+# --- vcluster control-plane binaries executed by vcluster (container_runtime_t) ---
+# IMPORTANT: Any new binary added to /var/lib/vcluster/bin/ MUST have an
+# explicit entry here. Without one, it inherits vcluster_data_t from the
+# catch-all rule below and will NOT transition to container_runtime_t.
+/var/lib/vcluster/bin/kube-apiserver                            --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/kube-controller-manager                   --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/kube-scheduler                            --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/kine                                      --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/etcd                                      --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/etcdctl                                   --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/konnectivity-server                       --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/helm                                      --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/kubectl                                   --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+/var/lib/vcluster/bin/vcluster-cli                              --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+
+# --- vcluster data directory (PKI, kine DB, konnectivity, pids, node scripts) ---
+/var/lib/vcluster(/.*)?                                             gen_context(system_u:object_r:vcluster_data_t,s0)
+
+# --- vcluster config ---
+/etc/vcluster(/.*)?                                                 gen_context(system_u:object_r:container_config_t,s0)
+/etc/vcluster-vpn(/.*)?                                             gen_context(system_u:object_r:container_config_t,s0)
+
+# --- CNI paths (not in container-selinux) ---
+/opt/cni(/.*)?                                                      gen_context(system_u:object_r:container_file_t,s0)
+/etc/cni(/.*)?                                                      gen_context(system_u:object_r:container_file_t,s0)
+
+# --- vcluster-vpn binary ---
+/usr/local/bin/vcluster-vpn                                     --  gen_context(system_u:object_r:container_runtime_exec_t,s0)
+
+# --- crictl config ---
+/etc/crictl\.yaml                                               --  gen_context(system_u:object_r:container_config_t,s0)
+
+# --- runtime dirs ---
+/run/kubernetes(/.*)?                                                gen_context(system_u:object_r:container_var_run_t,s0)

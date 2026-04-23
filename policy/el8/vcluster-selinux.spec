@@ -1,6 +1,17 @@
 %define vcluster_relabel_files() \
-        mkdir -p /var/lib/vcluster; \
-        restorecon -R -T 0 -i /var/lib/vcluster
+        umask 0077; \
+        mkdir -p /var/lib/vcluster /etc/vcluster; \
+        umask 0022; \
+        mkdir -p /opt/cni/bin /etc/cni/net.d /run/flannel /run/kubernetes; \
+        restorecon -R -i /var/lib/vcluster; \
+        restorecon -R -i /etc/vcluster; \
+        restorecon -R -i /etc/vcluster-vpn; \
+        restorecon -R -i /opt/cni; \
+        restorecon -R -i /etc/cni; \
+        restorecon -R -i /run/flannel; \
+        restorecon -R -i /run/kubernetes; \
+        restorecon -i /etc/crictl.yaml; \
+        restorecon -i /usr/local/bin/vcluster-vpn
 
 %define selinux_policyver 3.14.3-67
 %define container_policyver 2.167.0-1
@@ -26,9 +37,9 @@ BuildRequires:  selinux-policy >= %{selinux_policyver}
 BuildRequires:  selinux-policy-devel >= %{selinux_policyver}
 
 Requires:       policycoreutils, libselinux-utils
-Requires(post): selinux-policy-base >= %{selinux_policyver}, policycoreutils
+Requires(post): selinux-policy-base >= %{selinux_policyver}, policycoreutils, policycoreutils-python-utils
 Requires(post): container-selinux >= %{container_policy_epoch}:%{container_policyver}
-Requires(postun): policycoreutils
+Requires(postun): policycoreutils, policycoreutils-python-utils
 
 Provides:   %{name} = %{version}-%{release}
 
@@ -47,6 +58,8 @@ install -d %{buildroot}/etc/selinux/targeted/contexts/users/
 
 %post
 %selinux_modules_install %{_datadir}/selinux/packages/vcluster.pp
+/usr/sbin/semanage fcontext -a -t container_file_t '/var/run/flannel(/.*)?' 2>/dev/null || \
+/usr/sbin/semanage fcontext -m -t container_file_t '/var/run/flannel(/.*)?' || true
 if /usr/sbin/selinuxenabled ; then
     /usr/sbin/load_policy
     %vcluster_relabel_files
@@ -55,6 +68,18 @@ fi;
 %postun
 if [ $1 -eq 0 ]; then
     %selinux_modules_uninstall vcluster
+    /usr/sbin/semanage fcontext -d '/var/run/flannel(/.*)?' 2>/dev/null || true
+    if /usr/sbin/selinuxenabled ; then
+        restorecon -R -i /var/lib/vcluster 2>/dev/null || true
+        restorecon -R -i /etc/vcluster 2>/dev/null || true
+        restorecon -R -i /etc/vcluster-vpn 2>/dev/null || true
+        restorecon -R -i /opt/cni 2>/dev/null || true
+        restorecon -R -i /etc/cni 2>/dev/null || true
+        restorecon -R -i /run/flannel 2>/dev/null || true
+        restorecon -R -i /run/kubernetes 2>/dev/null || true
+        restorecon -i /etc/crictl.yaml 2>/dev/null || true
+        restorecon -i /usr/local/bin/vcluster-vpn 2>/dev/null || true
+    fi
 fi;
 
 %posttrans
@@ -65,5 +90,12 @@ fi;
 %{_datadir}/selinux/devel/include/contrib/vcluster.if
 
 %changelog
+* Wed Apr 16 2026 Loft Labs <support@loft.sh> 0.2-1
+- Replace stub policy with AVC-profiled policy for standalone and private nodes
+- Add file contexts for vcluster binaries, configs, CNI, VPN, and runtime dirs
+- Add semanage override for /run/flannel (container_file_t)
+- Add policycoreutils-python-utils dependency for semanage
+- Remove vcluster_syncer_t domain; processes run as container_runtime_t
+
 * Tue Apr 08 2026 Loft Labs <support@loft.sh> 0.1-1
 - Initial version

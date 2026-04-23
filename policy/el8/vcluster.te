@@ -1,43 +1,28 @@
-policy_module(vcluster, 0.1.0)
+policy_module(vcluster, 0.2.0)
 
 ########################################
 #
-# Declarations
+# vCluster SELinux policy
+#
+# vCluster processes run under container_runtime_t from container-selinux
+# rather than a custom domain. This is deliberate: the vcluster binary
+# manages containerd, kubelet, etcd, and kube-apiserver as child processes
+# requiring the same broad host access that container_runtime_t provides.
+# A dedicated domain would need to replicate most of container_runtime_t's
+# permissions, adding complexity without meaningful isolation.
+# This follows the established pattern used by other Kubernetes distributions.
 #
 
-require {
-	type container_runtime_t;
-	type container_t;
-	type container_file_t;
-	type spc_t;
-	class process { transition signal_perms };
-	class file { manage_file_perms relabel_file_perms };
-	class dir { manage_dir_perms relabel_dir_perms };
-	class sock_file { manage_file_perms };
-}
-
-# vcluster syncer domain
-type vcluster_syncer_t;
-domain_type(vcluster_syncer_t)
-
-# vcluster data files
+##### type: vcluster_data_t
+# Data files: PKI certs, kine DB, konnectivity sockets, pid files
 type vcluster_data_t;
 files_type(vcluster_data_t)
 
-########################################
-#
-# vcluster syncer policy
-#
+gen_require(`
+    attribute container_runtime_domain;
+')
 
-# Allow syncer to manage vcluster data
-allow vcluster_syncer_t vcluster_data_t:dir manage_dir_perms;
-allow vcluster_syncer_t vcluster_data_t:file manage_file_perms;
-allow vcluster_syncer_t vcluster_data_t:sock_file manage_file_perms;
-
-# Allow container runtime to transition to syncer domain
-allow container_runtime_t vcluster_syncer_t:process transition;
-
-# Allow syncer to interact with container types
-allow vcluster_syncer_t container_t:process signal_perms;
-allow vcluster_syncer_t container_file_t:file manage_file_perms;
-allow vcluster_syncer_t container_file_t:dir manage_dir_perms;
+# container_runtime_domain can manage vcluster data files.
+# Uses the module interface (no relabel permissions — prevents a
+# compromised runtime from relabeling PKI/DB to container_file_t).
+vcluster_manage_data(container_runtime_domain)
