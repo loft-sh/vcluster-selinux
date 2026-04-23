@@ -122,6 +122,17 @@ jobs:
             dist/${{ matrix.os }}/noarch \
             dist/${{ matrix.os }}/source
 
+      - name: Sign repomd.xml
+        env:
+          CHANNEL_KEY: ${{ env.CHANNEL == 'testing' && secrets.TESTING_PRIVATE_KEY || secrets.PRIVATE_KEY }}
+          CHANNEL_PASS: ${{ env.CHANNEL == 'testing' && secrets.TESTING_PRIVATE_KEY_PASS_PHRASE || secrets.PRIVATE_KEY_PASS_PHRASE }}
+        run: |
+          echo "$CHANNEL_KEY" | gpg --batch --pinentry-mode loopback --passphrase "$CHANNEL_PASS" --import
+          for d in dist/${{ matrix.os }}/noarch dist/${{ matrix.os }}/source; do
+            echo "$CHANNEL_PASS" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+              --detach-sign --armor "$d/repodata/repomd.xml"
+          done
+
       - name: Upload RPMs to S3
         run: |
           aws s3 sync \
