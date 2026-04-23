@@ -73,7 +73,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ github.ref_name }} dist/${{ matrix.os }}/noarch/* dist/${{ matrix.os }}/source/*
+          gh release upload "${{ github.ref_name }}" --clobber dist/${{ matrix.os }}/noarch/* dist/${{ matrix.os }}/source/*
+
+      - name: Install createrepo_c
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y createrepo-c
+
+      - name: Derive channel
+        run: |
+          CHANNEL=$(echo "${{ github.ref_name }}" | sed -E 's/^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.([a-z]+)\.[0-9]+$/\1/')
+          if ! [[ "$CHANNEL" =~ ^[a-z]+$ ]]; then
+            echo "failed to derive release channel from tag: ${{ github.ref_name }}" >&2
+            exit 1
+          fi
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
+
+      - name: Generate repo metadata
+        run: |
+          bash .github/scripts/create-rpm-repo.sh \
+            dist/${{ matrix.os }}/noarch \
+            dist/${{ matrix.os }}/source
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -83,6 +103,5 @@ jobs:
 
       - name: Upload to S3
         run: |
-          CHANNEL=$(echo "${{ github.ref_name }}" | sed -E 's/^v[0-9]+\.[0-9]+[-~a-zA-Z0-9]*\.([a-z]+)\.[0-9]+$/\1/')
-          aws s3 cp dist/${{ matrix.os }}/noarch/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ --recursive
-          aws s3 cp dist/${{ matrix.os }}/source/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ --recursive
+          aws s3 sync dist/${{ matrix.os }}/noarch/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/noarch/ --delete
+          aws s3 sync dist/${{ matrix.os }}/source/ s3://vcluster-selinux-rpm/${CHANNEL}/${{ matrix.os }}/source/ --delete
