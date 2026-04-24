@@ -2,12 +2,13 @@
         umask 0077; \
         mkdir -p /var/lib/vcluster /etc/vcluster; \
         umask 0022; \
-        mkdir -p /opt/cni/bin /etc/cni/net.d /run/flannel /run/kubernetes; \
+        mkdir -p /opt/cni/bin /etc/cni/net.d /opt/local-path-provisioner /run/flannel /run/kubernetes; \
         restorecon -R -T 0 -i /var/lib/vcluster; \
         restorecon -R -T 0 -i /etc/vcluster; \
         restorecon -R -T 0 -i /etc/vcluster-vpn; \
         restorecon -R -T 0 -i /opt/cni; \
         restorecon -R -T 0 -i /etc/cni; \
+        restorecon -R -T 0 -i /opt/local-path-provisioner; \
         restorecon -R -T 0 -i /run/flannel; \
         restorecon -R -T 0 -i /run/kubernetes; \
         restorecon -i /etc/crictl.yaml; \
@@ -75,6 +76,7 @@ if [ $1 -eq 0 ]; then
         restorecon -R -i /etc/vcluster-vpn 2>/dev/null || true
         restorecon -R -i /opt/cni 2>/dev/null || true
         restorecon -R -i /etc/cni 2>/dev/null || true
+        restorecon -R -i /opt/local-path-provisioner 2>/dev/null || true
         restorecon -R -i /run/flannel 2>/dev/null || true
         restorecon -R -i /run/kubernetes 2>/dev/null || true
         restorecon -i /etc/crictl.yaml 2>/dev/null || true
@@ -90,6 +92,12 @@ fi;
 %{_datadir}/selinux/devel/include/contrib/vcluster.if
 
 %changelog
+* Fri Apr 24 2026 Loft Labs <support@loft.sh> 0.3-1
+- Pre-create /opt/local-path-provisioner with the container_file_t label
+  (provided by container-selinux) so the standalone's bundled
+  local-path-provisioner helper pod can mkdir PV directories under it
+  without hitting a container_t -> usr_t AVC on /opt (ENGNODE-344)
+
 * Wed Apr 16 2026 Loft Labs <support@loft.sh> 0.2-1
 - Replace stub policy with AVC-profiled policy for standalone and private nodes
 - Add file contexts for vcluster binaries, configs, CNI, VPN, and runtime dirs
