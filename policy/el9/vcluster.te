@@ -1,4 +1,4 @@
-policy_module(vcluster, 0.2.0)
+policy_module(vcluster, 0.3.0)
 
 ########################################
 #
