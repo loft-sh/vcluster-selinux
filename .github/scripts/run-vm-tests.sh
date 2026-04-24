@@ -249,7 +249,7 @@ INSTALL_START=$(ssh "${SSH_OPTS[@]}" tester@127.0.0.1 "date '+%H:%M:%S'")
 echo "=== Run install-standalone.sh (${VCLUSTER_VERSION}${K8S_VERSION_OVERRIDE:+ / k8s ${K8S_VERSION_OVERRIDE}}) ==="
 set +e
 ssh "${SSH_OPTS[@]}" tester@127.0.0.1 "
-  sudo /tmp/install-standalone.sh --vcluster-version ${VCLUSTER_VERSION} --skip-selinux-rpm --skip-wait ${CONFIG_FLAG}
+  sudo /tmp/install-standalone.sh --vcluster-version ${VCLUSTER_VERSION} --skip-selinux-rpm --skip-wait --containerd-selinux ${CONFIG_FLAG}
 "
 INSTALL_RC=$?
 set -e
@@ -320,6 +320,54 @@ ssh "${SSH_OPTS[@]}" tester@127.0.0.1 "
   done
   sudo -E /usr/local/bin/kubectl get pods -A
 "
+
+echo "=== Smoke: default-StorageClass PVC must Bind and a pod must mount it (regression guard for ENGNODE-344) ==="
+ssh "${SSH_OPTS[@]}" tester@127.0.0.1 'bash -s' <<'REMOTE'
+set -e
+export KUBECONFIG=/var/lib/vcluster/kubeconfig.yaml
+K=/usr/local/bin/kubectl
+cat <<'YAML' | sudo -E $K apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: ci-pvc, namespace: default}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 64Mi}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: ci-pvc-consumer, namespace: default}
+spec:
+  restartPolicy: Never
+  containers:
+  - name: c
+    image: mirror.gcr.io/library/busybox:1.37.0-glibc
+    command: ["sh","-c","echo hello > /d/msg && sleep 20"]
+    volumeMounts: [{name: v, mountPath: /d}]
+  volumes:
+  - name: v
+    persistentVolumeClaim: {claimName: ci-pvc}
+YAML
+for i in $(seq 1 36); do
+  phase=$(sudo -E $K get pvc ci-pvc -o jsonpath='{.status.phase}' 2>/dev/null)
+  [ "$phase" = "Bound" ] && break
+  sleep 5
+done
+for i in $(seq 1 24); do
+  pod_phase=$(sudo -E $K get pod ci-pvc-consumer -o jsonpath='{.status.phase}' 2>/dev/null)
+  [ "$pod_phase" = "Running" ] || [ "$pod_phase" = "Succeeded" ] && break
+  sleep 5
+done
+echo "PVC phase=$phase pod phase=$pod_phase"
+if [ "$phase" != "Bound" ] || { [ "$pod_phase" != "Running" ] && [ "$pod_phase" != "Succeeded" ]; }; then
+  echo "FAIL: PVC or pod did not reach expected state"
+  sudo -E $K describe pvc ci-pvc
+  sudo -E $K describe pod ci-pvc-consumer
+  sudo -E $K get pods -n local-path-storage -o wide
+  sudo -E $K -n local-path-storage logs deploy/local-path-provisioner --tail=80 || true
+  exit 1
+fi
+REMOTE
 
 PLATFORM_TIMEOUT="${PLATFORM_TIMEOUT:-600}"
 VCLUSTER_CREATE_TIMEOUT="${VCLUSTER_CREATE_TIMEOUT:-600}"
