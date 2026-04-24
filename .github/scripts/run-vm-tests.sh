@@ -5,6 +5,7 @@ set -euo pipefail
 
 RPM_PATH="$(readlink -f "${1:?rpm path required}")"
 BATS_PATH="$(readlink -f "${2:?bats path required}")"
+FIXTURES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vm-test"
 
 VM_MEMORY_MB="${VM_MEMORY_MB:-6144}"
 VM_CPUS="${VM_CPUS:-4}"
@@ -51,51 +52,9 @@ echo "=== Generate ephemeral SSH keypair ==="
 ssh-keygen -t ed25519 -N '' -f id_rsa -C 'selinux-e2e' >/dev/null
 
 echo "=== Render cloud-init seed ==="
-cat >user-data <<EOF
-#cloud-config
-hostname: selinux-e2e
-users:
-  - name: tester
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-    ssh_authorized_keys:
-      - $(cat id_rsa.pub)
-ssh_pwauth: false
-disable_root: false
-write_files:
-  - path: /etc/selinux/config
-    permissions: '0644'
-    content: |
-      SELINUX=enforcing
-      SELINUXTYPE=targeted
-# k8s 1.31+ kubelet refuses cgroup v1. el8 defaults to v1; bootcmd edits
-# grub (idempotent, no reboot) and the runner reboots the VM explicitly
-# once cloud-init has finished. Earlier attempts to shut down from
-# bootcmd or via power_state raced cloud-init's per-instance modules
-# (user creation, ssh key install) and left the VM broken.
-bootcmd:
-  - |
-    set +e
-    LOG=/var/log/cgroup-v2-flip.log
-    exec >> "\$LOG" 2>&1
-    echo "=== cgroup-v2 grub flip @ \$(date -Iseconds) ==="
-    CUR=\$(stat -fc %T /sys/fs/cgroup 2>/dev/null)
-    echo "current fstype: \$CUR"
-    [ "\$CUR" = "cgroup2fs" ] && { echo "already v2"; exit 0; }
-    grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=1"
-    if ! grep -q systemd.unified_cgroup_hierarchy /etc/default/grub 2>/dev/null; then
-      sed -i 's|^GRUB_CMDLINE_LINUX="|GRUB_CMDLINE_LINUX="systemd.unified_cgroup_hierarchy=1 |' /etc/default/grub
-    fi
-    [ -f /boot/grub2/grub.cfg ] && grub2-mkconfig -o /boot/grub2/grub.cfg
-    find /boot/efi -name grub.cfg 2>/dev/null | while read -r cfg; do grub2-mkconfig -o "\$cfg"; done
-    sync
-runcmd:
-  - [ setenforce, "1" ]
-EOF
-cat >meta-data <<EOF
-instance-id: selinux-e2e
-local-hostname: selinux-e2e
-EOF
+SSH_PUBKEY="$(cat id_rsa.pub)"
+sed "s|__SSH_AUTHORIZED_KEY__|${SSH_PUBKEY}|" "$FIXTURES/user-data.yaml.tmpl" > user-data
+cp "$FIXTURES/meta-data.yaml" meta-data
 cloud-localds seed.iso user-data meta-data
 
 echo "=== Boot VM ==="
@@ -217,7 +176,7 @@ fi
 echo "=== BATS PASSED ==="
 
 VCLUSTER_VERSION="${VCLUSTER_VERSION:-v0.34.0-alpha.5}"
-POD_READY_TIMEOUT="${POD_READY_TIMEOUT:-600}"
+POD_READY_TIMEOUT="${POD_READY_TIMEOUT:-240}"
 INSTALLER_URL="${INSTALLER_URL:-https://github.com/loft-sh/vcluster/releases/download/${VCLUSTER_VERSION}/install-standalone.sh}"
 
 echo "=== Fetch install-standalone.sh (${VCLUSTER_VERSION}) ==="
@@ -228,18 +187,7 @@ scp "${SCP_OPTS[@]}" "$WORKDIR/install-standalone.sh" tester@127.0.0.1:/tmp/inst
 CONFIG_FLAG=""
 if [[ -n "${K8S_VERSION_OVERRIDE:-}" ]]; then
   echo "=== Pin kubernetes to ${K8S_VERSION_OVERRIDE} (host glibc compatibility) ==="
-  cat > "$WORKDIR/vcluster.yaml" <<YAML
-controlPlane:
-  standalone:
-    enabled: true
-    joinNode:
-      enabled: true
-      containerd:
-        enabled: true
-  distro:
-    k8s:
-      version: ${K8S_VERSION_OVERRIDE}
-YAML
+  sed "s|__K8S_VERSION__|${K8S_VERSION_OVERRIDE}|" "$FIXTURES/vcluster-k8s-pin.yaml.tmpl" > "$WORKDIR/vcluster.yaml"
   scp "${SCP_OPTS[@]}" "$WORKDIR/vcluster.yaml" tester@127.0.0.1:/tmp/vcluster.yaml
   CONFIG_FLAG="--config /tmp/vcluster.yaml"
 fi
@@ -313,7 +261,49 @@ ssh "${SSH_OPTS[@]}" tester@127.0.0.1 "
     if [ \"\$ready\" -ge 5 ]; then break; fi
     if [ \"\$(date +%s)\" -ge \"\$deadline\" ]; then
       echo 'ERROR: pods never reached 5 Running'
-      sudo -E /usr/local/bin/kubectl get pods -A || true
+      K=/usr/local/bin/kubectl
+      sudo -E \$K get pods -A -o wide || true
+      echo '--- events (last 40) ---'
+      sudo -E \$K get events -A --sort-by=.lastTimestamp | tail -40 || true
+      echo '--- flannel kubelet-side logs (per container, prev + current, NO stderr suppression) ---'
+      FPOD=\$(sudo -E \$K get pods -n kube-flannel -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+      echo \"pod=\$FPOD\"
+      for c in install-cni-plugin install-cni kube-flannel; do
+        echo \"--- logs prev -c \$c ---\"
+        sudo -E \$K logs -n kube-flannel \$FPOD -c \$c --previous || true
+        echo \"--- logs cur -c \$c ---\"
+        sudo -E \$K logs -n kube-flannel \$FPOD -c \$c || true
+      done
+      echo '--- ctr (containerd native) ---'
+      sudo ctr -n k8s.io containers ls 2>&1 | grep -E 'flannel|coredns|local-path' | head -10 || true
+      echo '--- /var/log/pods tree ---'
+      sudo find /var/log/pods -maxdepth 3 2>&1 | head -30
+      echo '--- flannel + coredns container logs (all attempts) ---'
+      sudo find /var/log/pods -path '*kube-flannel*' -name '*.log' 2>/dev/null | while read f; do
+        echo \":::: \$f ::::\"
+        sudo tail -80 \"\$f\" 2>&1 || true
+      done
+      sudo find /var/log/pods -path '*coredns*' -name '*.log' 2>/dev/null | while read f; do
+        echo \":::: \$f ::::\"
+        sudo tail -40 \"\$f\" 2>&1 || true
+      done
+      echo '--- container-selinux + kernel version ---'
+      sudo rpm -q container-selinux selinux-policy kernel 2>&1 | tail -5
+      sudo uname -a
+      echo '--- kubelet journal (last 100) ---'
+      sudo journalctl -u kubelet.service --no-pager -n 100 || true
+      echo '--- containerd journal (last 60) ---'
+      sudo journalctl -u containerd.service --no-pager -n 60 || true
+      echo '--- dmesg tail ---'
+      sudo dmesg | tail -60 || true
+      echo '--- kernel modules (vxlan / bridge / iptable) ---'
+      sudo lsmod | grep -E 'vxlan|bridge|nf_|iptable|xt_' || echo '(none)'
+      echo '--- sysctl net ---'
+      sudo sysctl net.bridge.bridge-nf-call-iptables net.ipv4.ip_forward 2>&1 || true
+      echo '--- AVCs since install start ---'
+      sudo ausearch -m avc -ts recent 2>&1 | tail -80 || true
+      echo '--- /run/flannel state ---'
+      sudo ls -lZ /run/flannel 2>&1 || true
       exit 1
     fi
     sleep 10
@@ -322,32 +312,12 @@ ssh "${SSH_OPTS[@]}" tester@127.0.0.1 "
 "
 
 echo "=== Smoke: default-StorageClass PVC must Bind and a pod must mount it (regression guard for ENGNODE-344) ==="
+scp "${SCP_OPTS[@]}" "$FIXTURES/pvc-smoke.yaml" tester@127.0.0.1:/tmp/pvc-smoke.yaml
 ssh "${SSH_OPTS[@]}" tester@127.0.0.1 'bash -s' <<'REMOTE'
 set -e
 export KUBECONFIG=/var/lib/vcluster/kubeconfig.yaml
 K=/usr/local/bin/kubectl
-cat <<'YAML' | sudo -E $K apply -f -
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: {name: ci-pvc, namespace: default}
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: {requests: {storage: 64Mi}}
----
-apiVersion: v1
-kind: Pod
-metadata: {name: ci-pvc-consumer, namespace: default}
-spec:
-  restartPolicy: Never
-  containers:
-  - name: c
-    image: mirror.gcr.io/library/busybox:1.37.0-glibc
-    command: ["sh","-c","echo hello > /d/msg && sleep 20"]
-    volumeMounts: [{name: v, mountPath: /d}]
-  volumes:
-  - name: v
-    persistentVolumeClaim: {claimName: ci-pvc}
-YAML
+sudo -E $K apply -f /tmp/pvc-smoke.yaml
 for i in $(seq 1 36); do
   phase=$(sudo -E $K get pvc ci-pvc -o jsonpath='{.status.phase}' 2>/dev/null)
   [ "$phase" = "Bound" ] && break

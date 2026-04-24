@@ -1,0 +1,44 @@
+#cloud-config
+hostname: selinux-e2e
+users:
+  - name: tester
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - __SSH_AUTHORIZED_KEY__
+ssh_pwauth: false
+disable_root: false
+write_files:
+  - path: /etc/selinux/config
+    permissions: '0644'
+    content: |
+      SELINUX=enforcing
+      SELINUXTYPE=targeted
+# k8s 1.31+ kubelet refuses cgroup v1. el8 defaults to v1; bootcmd edits
+# grub (idempotent, no reboot) and the runner reboots the VM explicitly
+# once cloud-init has finished. Earlier attempts to shut down from
+# bootcmd or via power_state raced cloud-init's per-instance modules
+# (user creation, ssh key install) and left the VM broken.
+bootcmd:
+  - |
+    set +e
+    LOG=/var/log/cgroup-v2-flip.log
+    exec >> "$LOG" 2>&1
+    echo "=== cgroup-v2 grub flip @ $(date -Iseconds) ==="
+    CUR=$(stat -fc %T /sys/fs/cgroup 2>/dev/null)
+    echo "current fstype: $CUR"
+    [ "$CUR" = "cgroup2fs" ] && { echo "already v2"; exit 0; }
+    grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=1"
+    if ! grep -q systemd.unified_cgroup_hierarchy /etc/default/grub 2>/dev/null; then
+      sed -i 's|^GRUB_CMDLINE_LINUX="|GRUB_CMDLINE_LINUX="systemd.unified_cgroup_hierarchy=1 |' /etc/default/grub
+    fi
+    [ -f /boot/grub2/grub.cfg ] && grub2-mkconfig -o /boot/grub2/grub.cfg
+    find /boot/efi -name grub.cfg 2>/dev/null | while read -r cfg; do grub2-mkconfig -o "$cfg"; done
+    sync
+runcmd:
+  - [ setenforce, "1" ]
+  # AlmaLinux 9 GenericCloud doesn't ship iptables, so /run/xtables.lock
+  # never gets the iptables_var_run_t label. When kubelet bind-mounts the
+  # file with FileOrCreate into a --containerd-selinux-confined container
+  # (like flannel), the container gets Permission denied on flock.
+  - [ sh, -c, "dnf install -y iptables-nft || yum install -y iptables || true" ]
