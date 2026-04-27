@@ -42,3 +42,10 @@ runcmd:
   # file with FileOrCreate into a --containerd-selinux-confined container
   # (like flannel), the container gets Permission denied on flock.
   - [ sh, -c, "dnf install -y iptables-nft || yum install -y iptables || true" ]
+  # AlmaLinux 10's kernel ships br_netfilter only in kernel-modules-extra
+  # and does not auto-load it. Without the module, kube-proxy's iptables
+  # NAT rules don't apply to bridged pod traffic and pods can't reach the
+  # apiserver via the cluster service IP. Install, load, and persist.
+  - [ sh, -c, "dnf install -y kernel-modules-extra-$(uname -r) || dnf install -y kernel-modules-extra || true" ]
+  - [ sh, -c, "modprobe br_netfilter || true" ]
+  - [ sh, -c, "echo br_netfilter > /etc/modules-load.d/br_netfilter.conf" ]

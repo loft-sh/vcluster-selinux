@@ -1,0 +1,32 @@
+#!/bin/bash
+set -e -x
+
+cd $(dirname $0)/..
+. ./scripts/version
+
+SEMOD_VERSION="${RPM_VERSION%%~*}.${RPM_RELEASE}"
+sed -i.bak -E "s|^policy_module\(vcluster, [^)]*\)|policy_module(vcluster, ${SEMOD_VERSION})|" vcluster.te
+rm -f vcluster.te.bak
+
+mkdir -p /source/dist/el10
+CHANGELOG_PATH="$PWD/CHANGELOG.md"
+touch "$CHANGELOG_PATH"
+RPM_VERSION="$RPM_VERSION" RPM_RELEASE="$RPM_RELEASE" \
+COMMIT="$COMMIT" TAG="${TAG:-}" \
+  ../../scripts/gen-changelog "$CHANGELOG_PATH"
+
+make -f /usr/share/selinux/devel/Makefile vcluster.pp
+
+rpmbuild \
+    --define "vcluster_selinux_version ${RPM_VERSION}" \
+    --define "vcluster_selinux_release ${RPM_RELEASE}" \
+    --define "_sourcedir $PWD" \
+    --define "_specdir $PWD" \
+    --define "_builddir $PWD" \
+    --define "_srcrpmdir ${PWD}/dist/source" \
+    --define "_buildrootdir $PWD/.build" \
+    --define "_rpmdir ${PWD}/dist" \
+    --define "changelog_path $CHANGELOG_PATH" \
+    -ba vcluster-selinux.spec
+
+cp -r dist/* /source/dist/el10

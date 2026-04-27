@@ -17,6 +17,7 @@ jobs:
         os:
           - "el8"
           - "el9"
+          - "el10"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
