@@ -92,18 +92,4 @@ fi;
 %{_datadir}/selinux/devel/include/contrib/vcluster.if
 
 %changelog
-* Fri Apr 24 2026 Loft Labs <support@loft.sh> 0.3-1
-- Pre-create /opt/local-path-provisioner with the container_file_t label
-  (provided by container-selinux) so the standalone's bundled
-  local-path-provisioner helper pod can mkdir PV directories under it
-  without hitting a container_t -> usr_t AVC on /opt (ENGNODE-344)
-
-* Wed Apr 16 2026 Loft Labs <support@loft.sh> 0.2-1
-- Replace stub policy with AVC-profiled policy for standalone and private nodes
-- Add file contexts for vcluster binaries, configs, CNI, VPN, and runtime dirs
-- Add semanage override for /run/flannel (container_file_t)
-- Add policycoreutils-python-utils dependency for semanage
-- Remove vcluster_syncer_t domain; processes run as container_runtime_t
-
-* Tue Apr 08 2026 Loft Labs <support@loft.sh> 0.1-1
-- Initial version
+%include %{changelog_path}

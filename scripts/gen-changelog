@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OUT="${1:?usage: gen-changelog <output-path>}"
+REPO="${SOURCE:-/source}"
+
+RPM_VERSION="${RPM_VERSION:?RPM_VERSION missing}"
+RPM_RELEASE="${RPM_RELEASE:?RPM_RELEASE missing}"
+
+PACKAGER="Loft Labs <support@loft.sh>"
+DATE="$(date '+%a %b %d %Y')"
+RANGE_ARGS=()
+
+if [[ -z "${COMMIT:-}" ]]; then
+  echo "COMMIT is missing" >&2
+  exit 1
+fi
+
+# If we're on a release tag, emit the commits between the previous release
+# tag in the same channel and this one. Otherwise (snapshot build), emit
+# everything since the latest tag.
+if [[ -n "${TAG:-}" && "$TAG" =~ ^(v[0-9]+\.[0-9]+)\.([^.]+)\.([0-9]+)$ ]]; then
+  base="${BASH_REMATCH[1]}"
+  channel="${BASH_REMATCH[2]}"
+  release="${BASH_REMATCH[3]}"
+
+  if [[ "$release" == "0" ]]; then
+    mapfile -t tag_list < <(git -C "$REPO" tag --list "v*.${channel}.*" 2>/dev/null | sort -V)
+  else
+    mapfile -t tag_list < <(git -C "$REPO" tag --list "${base}.${channel}.*" 2>/dev/null | sort -V)
+  fi
+
+  prev_tag=""
+  for i in "${!tag_list[@]}"; do
+    [[ "${tag_list[i]}" == "$TAG" ]] && break
+    prev_tag="${tag_list[i]}"
+  done
+
+  if [[ -n "$prev_tag" ]]; then
+    RANGE_ARGS=("${prev_tag}..${TAG}")
+  else
+    RANGE_ARGS=("${TAG}^..${TAG}")
+  fi
+else
+  latest_tag="$(git -C "$REPO" tag --list --sort=-v:refname | head -n1)"
+  if [[ -n "$latest_tag" ]]; then
+    RANGE_ARGS=("${latest_tag}..${COMMIT}")
+  else
+    RANGE_ARGS=("${COMMIT}^..${COMMIT}")
+  fi
+fi
+
+{
+  echo "* ${DATE} ${PACKAGER} - ${RPM_VERSION}-${RPM_RELEASE}"
+  git_output="$(git -C "$REPO" log "${RANGE_ARGS[@]}" --no-merges --pretty='format:- %s' 2>/dev/null || true)"
+  if [[ -z "$git_output" ]]; then
+    printf '%s\n' "- No changelogs for this version"
+  else
+    printf '%s\n' "$git_output"
+  fi
+} >"$OUT"
+
+# Strip stray control chars (defensive — rke2-selinux does the same)
+sed -i 's/[\x00-\x1F\x7F]//g' "$OUT"
