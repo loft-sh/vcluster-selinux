@@ -26,3 +26,18 @@ gen_require(`
 # Uses the module interface (no relabel permissions — prevents a
 # compromised runtime from relabeling PKI/DB to container_file_t).
 vcluster_manage_data(container_runtime_domain)
+
+##### container_t -> kernel_t:tcp_socket { read write }
+# Inbound TCP sockets accepted by the kernel arrive labeled kernel_t.
+# RHEL/Rocky's container-selinux grants container_t access to them
+# implicitly; Amazon Linux 2023's fork does not, which causes every
+# readiness/liveness probe and incoming service connection to be RST'd
+# at the userspace boundary (e.g. coredns stuck 0/1 Ready).
+# Both read and write are required: read for the request, write for
+# the response — coredns hits the write denial when answering /ready.
+gen_require(`
+    type container_t;
+    type kernel_t;
+')
+
+allow container_t kernel_t:tcp_socket { read write };
