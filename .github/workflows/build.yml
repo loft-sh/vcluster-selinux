@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [el8, el9]
+        os: [el8, el9, el10]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [el8, el9]
+        os: [el8, el9, el10]
     steps:
       - uses: actions/checkout@v6
 
@@ -72,13 +72,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: el8 and el9 policy files are identical
+      - name: policy files are identical across el8 / el9 / el10
         run: |
-          diff policy/el8/vcluster.te policy/el9/vcluster.te
-          diff policy/el8/vcluster.fc policy/el9/vcluster.fc
-          diff policy/el8/vcluster.if policy/el9/vcluster.if
+          for f in vcluster.te vcluster.fc vcluster.if; do
+            diff policy/el8/$f policy/el9/$f
+            diff policy/el9/$f policy/el10/$f
+          done
 
-      - name: spec differences are only version-related
+      - name: el8 vs el9 spec differences are only version-related
         run: |
           # Expected-only diffs: restorecon flag, container-selinux version, release tag.
           diff policy/el8/vcluster-selinux.spec policy/el9/vcluster-selinux.spec \
@@ -87,3 +88,16 @@ jobs:
             | grep -v "container_policyver\|container_policy_epoch" \
             | grep -v "\.el[89]" \
             | { ! grep . ; }
+
+      - name: el9 vs el10 spec differences are only version-related
+        run: |
+          # Expected-only diffs: selinux-policy / container-selinux versions, release tag, /run/flannel canonical path.
+          diff policy/el9/vcluster-selinux.spec policy/el10/vcluster-selinux.spec \
+            | grep "^[<>]" \
+            | grep -v "^[<>] #" \
+            | grep -v "selinux_policyver" \
+            | grep -v "container_policyver\|container_policy_epoch" \
+            | grep -v "\.el\(9\|10\)" \
+            | grep -v "/var/run/flannel\|/run/flannel" \
+            | { ! grep . ; }
+

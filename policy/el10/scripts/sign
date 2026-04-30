@@ -1,0 +1,42 @@
+#!/bin/bash
+set -e -x
+
+yum install -y rpm-sign git
+
+pushd $(dirname $0)/..
+. ./scripts/version
+popd
+
+cat <<\EOF >~/.rpmmacros
+%_signature gpg
+%_gpg_name ci@loft.sh
+%__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --pinentry-mode loopback --passphrase-file /tmp/.gpg-passphrase --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} --digest-algo sha256 %{__plaintext_filename}
+%_source_filedigest_algorithm 8
+%_binary_filedigest_algorithm 8
+EOF
+
+case "$RPM_CHANNEL" in
+  "testing")
+    export PRIVATE_KEY_PASS_PHRASE=$TESTING_PRIVATE_KEY_PASS_PHRASE
+    if ! grep "BEGIN PGP PRIVATE KEY BLOCK" <<<"$TESTING_PRIVATE_KEY"; then
+      echo "TESTING_PRIVATE_KEY not defined, failing rpm sign"
+      exit 1
+    fi
+    gpg --batch --pinentry-mode loopback --passphrase "$PRIVATE_KEY_PASS_PHRASE" --import - <<<"$TESTING_PRIVATE_KEY"
+    ;;
+  "latest"|"stable")
+    if ! grep "BEGIN PGP PRIVATE KEY BLOCK" <<<"$PRIVATE_KEY"; then
+      echo "PRIVATE_KEY not defined, failing rpm sign"
+      exit 1
+    fi
+    gpg --batch --pinentry-mode loopback --passphrase "$PRIVATE_KEY_PASS_PHRASE" --import - <<<"$PRIVATE_KEY"
+    ;;
+  *)
+    echo "RPM_CHANNEL $RPM_CHANNEL does not match one of: [testing, latest, stable]"
+    exit 1
+    ;;
+esac
+
+echo "$PRIVATE_KEY_PASS_PHRASE" > /tmp/.gpg-passphrase
+rpmsign --addsign dist/el10/**/vcluster-*.rpm
+rm -f /tmp/.gpg-passphrase

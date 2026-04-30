@@ -6,6 +6,7 @@ VERIFY_TARGETS := $(addprefix verify-,$(shell ls policy/))
 # Images used for RPM-level verification (no SELinux enforcement needed).
 VERIFY_IMAGE_el8 := rockylinux:8
 VERIFY_IMAGE_el9 := quay.io/centos/centos:stream9
+VERIFY_IMAGE_el10 := almalinux:10
 
 $(BUILD_TARGETS):
 	docker buildx build \

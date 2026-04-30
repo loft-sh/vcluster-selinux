@@ -1,0 +1,23 @@
+## <summary>Policy for vCluster virtual Kubernetes clusters.</summary>
+
+########################################
+## <summary>
+##	Allow a domain to manage vcluster data files.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`vcluster_manage_data',`
+	gen_require(`
+		type vcluster_data_t;
+	')
+
+	manage_dirs_pattern($1, vcluster_data_t, vcluster_data_t)
+	manage_files_pattern($1, vcluster_data_t, vcluster_data_t)
+	manage_sock_files_pattern($1, vcluster_data_t, vcluster_data_t)
+	manage_lnk_files_pattern($1, vcluster_data_t, vcluster_data_t)
+	manage_fifo_files_pattern($1, vcluster_data_t, vcluster_data_t)
+')
