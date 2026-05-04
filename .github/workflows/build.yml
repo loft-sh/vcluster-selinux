@@ -30,6 +30,35 @@ jobs:
       - name: Build RPM
         run: make build-${{ matrix.os }}
 
+      - name: Sign RPM (dry-run)
+        run: |
+          cat > /tmp/genkey <<EOF
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 2048
+          Name-Real: vcluster-selinux ci dry-run
+          Name-Email: ci@loft.sh
+          Expire-Date: 1
+          Passphrase: ci-throwaway
+          %commit
+          EOF
+          gpg --batch --pinentry-mode loopback --gen-key /tmp/genkey
+          gpg --batch --pinentry-mode loopback --passphrase ci-throwaway \
+            --export-secret-keys --armor ci@loft.sh > /tmp/testing_private_key
+          printf 'ci-throwaway' > /tmp/testing_private_key_pass_phrase
+          : > /tmp/private_key
+          : > /tmp/private_key_pass_phrase
+          docker buildx build \
+            --target result --output=. \
+            --build-arg SCRIPT=sign \
+            --secret id=testing_private_key,src=/tmp/testing_private_key \
+            --secret id=testing_private_key_pass_phrase,src=/tmp/testing_private_key_pass_phrase \
+            --secret id=private_key,src=/tmp/private_key \
+            --secret id=private_key_pass_phrase,src=/tmp/private_key_pass_phrase \
+            -f Dockerfile.${{ matrix.os }} .
+          rm -f /tmp/testing_private_key /tmp/testing_private_key_pass_phrase \
+                /tmp/private_key /tmp/private_key_pass_phrase /tmp/genkey
+
       - name: Install createrepo_c
         run: |
           sudo apt-get update

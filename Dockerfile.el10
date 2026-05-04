@@ -3,7 +3,7 @@ FROM almalinux:10 AS build
 # AlmaLinux 10 mirrors the RHEL 10 release line; building on Stream 10 would
 # emit a policydb module version (24) that RHEL 10's libsepol (max 23) cannot
 # load.
-RUN yum -y install container-selinux git rpm-build selinux-policy-devel yum-utils ca-certificates
+RUN yum -y install container-selinux git rpm-build selinux-policy-devel yum-utils ca-certificates gnupg2
 
 ENV SOURCE=/source
 
