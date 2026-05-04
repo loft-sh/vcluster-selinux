@@ -36,7 +36,7 @@ $(VERIFY_TARGETS):
 
 lint:
 	docker run --rm -v $(CURDIR):$(CURDIR) -w $(CURDIR) \
-	  fedora:41 bash test/verify-lint.sh
+	  fedora:45 bash test/verify-lint.sh
 
 clean:
 	rm -rf dist/
