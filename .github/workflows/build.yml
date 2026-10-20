@@ -12,7 +12,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Static policy lint (selint + sepolgen-ifgen)
         run: make lint
 
@@ -23,7 +23,7 @@ jobs:
       matrix:
         os: [el8, el9, el10]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
 
@@ -71,7 +71,7 @@ jobs:
             dist/${{ matrix.os }}/source
 
       - name: Upload RPM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rpm-${{ matrix.os }}
           path: dist/${{ matrix.os }}/noarch/*.rpm
@@ -84,10 +84,10 @@ jobs:
       matrix:
         os: [el8, el9, el10]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Download RPM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: rpm-${{ matrix.os }}
           path: dist/${{ matrix.os }}/noarch/
@@ -99,7 +99,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: policy files are identical across el8 / el9 / el10
         run: |
