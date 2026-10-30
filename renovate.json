@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
   ],
   "labels": ["dependencies"],
   "customManagers": [
@@ -18,6 +19,19 @@
       "matchStrings": ["docker\\.io/library/busybox:(?<currentValue>[^\\s]+)"],
       "depNameTemplate": "docker.io/library/busybox",
       "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Keep internal actions on rolling tags",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "loft-sh/**"
+      ],
+      "pinDigests": false,
+      "enabled": false
     }
   ]
 }
